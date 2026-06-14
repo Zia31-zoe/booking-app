@@ -1180,6 +1180,20 @@ button {
   gap: 10px;
 }
 
+/* ---------- Venue cashflow ---------- */
+.venue-row {
+  flex-wrap: wrap;
+}
+.venue-row.low {
+  border-color: var(--color-warn);
+}
+.venue-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
 /* ---------- Follow-up buttons (trial members) ---------- */
 .followup-options {
   display: flex;
