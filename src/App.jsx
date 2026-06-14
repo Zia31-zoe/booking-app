@@ -30,8 +30,8 @@ import {
 /* ============================================================
    Supabase 設定
    ============================================================ */
-const SUPABASE_URL = "https://yzfqwqncyuxqxsbklike.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl6ZnF3cW5jeXV4cXhzYmtsaWtlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEzOTIzNzEsImV4cCI6MjA5Njk2ODM3MX0.6eFIBIFm6ZCoj1dS8ujnRo8NCO1t6G1VKT4qUPqwSzI";
+const SUPABASE_URL = "https://aqfdtgqhpnkffxfrefjl.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFxZmR0Z3FocG5rZmZ4ZnJlZmpsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE0MjgzNTIsImV4cCI6MjA5NzAwNDM1Mn0.DA76K7fr6k5H8l1IRULrejBy2x7nVDM3Xb9GAcv4Cv0";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const FILES_BUCKET = "member-files";
