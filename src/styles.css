@@ -1352,6 +1352,19 @@ input[type="time"]::-webkit-date-and-time-value {
   min-width: 0;
 }
 
+/* ---------- Session schedule edit grid ---------- */
+.sched-edit-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  min-width: 0;
+}
+@media (max-width: 480px) {
+  .sched-edit-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ---------- Venue cashflow ---------- */
 .venue-row {
   flex-wrap: wrap;
@@ -1580,4 +1593,3 @@ input[type="time"]::-webkit-date-and-time-value {
 .cal-block-session {
   z-index: 1;
 }
-
