@@ -837,7 +837,13 @@ function ScheduleManager({ members, sessions, onAdd, onOpenSession, presetMember
 /* ============================================================
    訓練記錄 / 課堂詳情 Modal
    ============================================================ */
-function SessionModal({ session, member, onClose, onSave, onDelete }) {
+function SessionModal({ session, member, venues, onClose, onSave, onDelete }) {
+  const [schedForm, setSchedForm] = useState({
+    session_date: session.session_date || "",
+    start_time: session.start_time || "",
+    duration_min: session.duration_min || 60,
+    location: session.location || "",
+  });
   const [form, setForm] = useState({
     warmup: session.warmup || "",
     main_training: session.main_training || "",
@@ -851,10 +857,11 @@ function SessionModal({ session, member, onClose, onSave, onDelete }) {
   const [saving, setSaving] = useState(false);
 
   const update = (key, val) => setForm((f) => ({ ...f, [key]: val }));
+  const updateSched = (key, val) => setSchedForm((f) => ({ ...f, [key]: val }));
 
   const handleSave = async (markCompleted) => {
     setSaving(true);
-    await onSave(session.id, { ...form, markCompleted });
+    await onSave(session.id, { ...form, ...schedForm, markCompleted });
     setSaving(false);
     onClose();
   };
@@ -882,8 +889,38 @@ function SessionModal({ session, member, onClose, onSave, onDelete }) {
         </div>
 
         <div className="modal-body">
-          <label className="block-label">
-            熱身
+          {/* 排課基本資訊編輯:已完成的課堂仍可更新地點,排定中的可改日期/時間 */}
+          <div className="sched-edit-grid">
+            <label className="block-label">
+              日期
+              <div className="date-time-wrap">
+                <input type="date" value={schedForm.session_date} onChange={(e) => updateSched("session_date", e.target.value)} disabled={isCompleted} />
+              </div>
+            </label>
+            <label className="block-label">
+              時間
+              <div className="date-time-wrap">
+                <input type="time" value={schedForm.start_time} onChange={(e) => updateSched("start_time", e.target.value)} disabled={isCompleted} />
+              </div>
+            </label>
+            <label className="block-label">
+              時長(分鐘)
+              <select value={schedForm.duration_min} onChange={(e) => updateSched("duration_min", e.target.value)} disabled={isCompleted}>
+                {[30,45,60,75,90,105,120].map((v) => <option key={v} value={v}>{v}</option>)}
+              </select>
+            </label>
+            <label className="block-label">
+              地點
+              <select value={schedForm.location} onChange={(e) => updateSched("location", e.target.value)}>
+                <option value="">無</option>
+                {(venues || []).map((v) => (
+                  <option key={v.id} value={v.name}>{v.name}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="divider" />
             <textarea rows={2} value={form.warmup} onChange={(e) => update("warmup", e.target.value)} placeholder="例如:動態伸展 5 分鐘、滾筒放鬆" />
           </label>
           <label className="block-label">
@@ -939,6 +976,7 @@ function MembersManager({
   sessions,
   payments,
   bodyRecords,
+  manualCharges,
   coaches,
   isStaff,
   currentCoachId,
@@ -953,6 +991,8 @@ function MembersManager({
   onAddBodyRecord,
   onUpdateBodyRecord,
   onUploadFile,
+  onAddManualCharge,
+  onDeleteManualCharge,
   openMemberId,
   onMemberDetailHandled,
 }) {
@@ -1107,6 +1147,7 @@ function MembersManager({
           sessions={sessions.filter((s) => s.member_id === detailFor.id)}
           payments={payments.filter((p) => p.member_id === detailFor.id)}
           bodyRecords={bodyRecords.filter((b) => b.member_id === detailFor.id)}
+          manualCharges={(manualCharges || []).filter((c) => c.member_id === detailFor.id)}
           onClose={() => setDetailFor(null)}
           onUpdateMember={onUpdateMember}
           onDeleteMember={onDeleteMember}
@@ -1116,6 +1157,8 @@ function MembersManager({
           onAddBodyRecord={onAddBodyRecord}
           onUpdateBodyRecord={onUpdateBodyRecord}
           onUploadFile={onUploadFile}
+          onAddManualCharge={onAddManualCharge}
+          onDeleteManualCharge={onDeleteManualCharge}
         />
       )}
 
@@ -1275,11 +1318,23 @@ function AddMemberForm({ coaches, isStaff, currentCoachId, onAdd }) {
    ============================================================ */
 function PurchaseModal({ member, onClose, onPurchase }) {
   const [sessionsAdded, setSessionsAdded] = useState(10);
+  const [pricePerSession, setPricePerSession] = useState(member.price_per_session || "");
   const [amount, setAmount] = useState("");
+
+  // 當堂數或單堂金額改變時,自動算出收款總金額供參考
+  const calcAmount = sessionsAdded && pricePerSession
+    ? Number(sessionsAdded) * Number(pricePerSession)
+    : "";
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    await onPurchase(member.id, Number(sessionsAdded), amount === "" ? 0 : Number(amount));
+    const finalAmount = amount !== "" ? Number(amount) : calcAmount !== "" ? calcAmount : 0;
+    await onPurchase(
+      member.id,
+      Number(sessionsAdded),
+      finalAmount,
+      pricePerSession !== "" ? Number(pricePerSession) : null,
+    );
     onClose();
   };
 
@@ -1295,14 +1350,31 @@ function PurchaseModal({ member, onClose, onPurchase }) {
         <form onSubmit={handleSubmit} className="form-card">
           <label>
             購買堂數
-            <input type="number" min={0} value={sessionsAdded} onChange={(e) => setSessionsAdded(e.target.value)} required />
+            <input type="number" min={1} value={sessionsAdded} onChange={(e) => setSessionsAdded(e.target.value)} required />
           </label>
           <label>
-            收款金額(元)
-            <input type="number" min={0} value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="選填,會記錄到金流" />
+            本次單堂課金額(元)
+            <input
+              type="number"
+              min={0}
+              value={pricePerSession}
+              onChange={(e) => setPricePerSession(e.target.value)}
+              placeholder={`上次 $${member.price_per_session || 0}`}
+            />
+          </label>
+          <label>
+            實收金額(元)
+            <input
+              type="number"
+              min={0}
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder={calcAmount !== "" ? `自動計算:$${calcAmount.toLocaleString()}` : "選填"}
+            />
           </label>
           <p className="modal-hint">
-            目前總堂數 {member.total_sessions} → 加購後 {member.total_sessions + Number(sessionsAdded || 0)}
+            總堂數 {member.total_sessions} → 加購後 {member.total_sessions + Number(sessionsAdded || 0)}
+            {pricePerSession !== "" && ` · 本次單堂金額將更新為 $${Number(pricePerSession).toLocaleString()}`}
           </p>
           <button type="submit" className="btn-primary full">
             確認購課
@@ -1320,6 +1392,7 @@ const MEMBER_DETAIL_TABS = [
   { key: "profile", label: "基本資料" },
   { key: "body", label: "Inbody / 體態" },
   { key: "payment", label: "繳款" },
+  { key: "charges", label: "手動扣費" },
   { key: "history", label: "訓練紀錄" },
 ];
 
@@ -1328,6 +1401,7 @@ function MemberDetailModal({
   sessions,
   payments,
   bodyRecords,
+  manualCharges,
   onClose,
   onUpdateMember,
   onDeleteMember,
@@ -1337,6 +1411,8 @@ function MemberDetailModal({
   onAddBodyRecord,
   onUpdateBodyRecord,
   onUploadFile,
+  onAddManualCharge,
+  onDeleteManualCharge,
 }) {
   const [tab, setTab] = useState("profile");
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -1399,6 +1475,15 @@ function MemberDetailModal({
               onAddPayment={onAddPayment}
               onUpdatePayment={onUpdatePayment}
               onDeletePayment={onDeletePayment}
+            />
+          )}
+
+          {tab === "charges" && (
+            <ManualChargesTab
+              member={member}
+              manualCharges={manualCharges || []}
+              onAddManualCharge={onAddManualCharge}
+              onDeleteManualCharge={onDeleteManualCharge}
             />
           )}
 
@@ -1798,6 +1883,105 @@ function PaymentTab({ member, payments, totalPaid, totalCourseFee, remainingUnpa
                   <Trash2 size={14} />
                 </button>
               </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================================================
+   手動扣費 Tab
+   ============================================================ */
+function ManualChargesTab({ member, manualCharges, onAddManualCharge, onDeleteManualCharge }) {
+  const [showForm, setShowForm] = useState(false);
+  const [label, setLabel] = useState("");
+  const [amount, setAmount] = useState("");
+  const [note, setNote] = useState("");
+  const [chargeDate, setChargeDate] = useState(todayStr());
+
+  const sorted = manualCharges.slice().sort((a, b) => (b.charge_date || "").localeCompare(a.charge_date || ""));
+  const totalCharged = manualCharges.reduce((sum, c) => sum + Number(c.amount || 0), 0);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    await onAddManualCharge(member.id, {
+      label: label.trim(),
+      amount: Number(amount),
+      charge_date: chargeDate,
+      note: note.trim(),
+    });
+    setLabel(""); setAmount(""); setNote(""); setChargeDate(todayStr());
+    setShowForm(false);
+  };
+
+  return (
+    <div className="section">
+      <div className="stat-grid">
+        <div className="stat-card">
+          <span className="stat-label">累計手動扣費</span>
+          <span className="stat-value warn">{fmtMoney(totalCharged)}</span>
+        </div>
+      </div>
+
+      <div className="hint-box">
+        此處用於記錄不扣課堂數但需收費的情況,例如：臨時取消的場地費、額外服務費、遲到費等。費用會同步顯示在「金流」分頁。
+      </div>
+
+      <button className="btn-primary" onClick={() => setShowForm((v) => !v)}>
+        {showForm ? <X size={16} /> : <Plus size={16} />}
+        {showForm ? "取消" : "新增手動扣費"}
+      </button>
+
+      {showForm && (
+        <form className="card form-card" onSubmit={handleSubmit}>
+          <label className="block-label">
+            項目名稱
+            <input
+              type="text"
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              placeholder="例如:場地費、遲到費、臨時取消費"
+              required
+            />
+          </label>
+          <div className="trial-fields-row">
+            <label className="block-label">
+              金額(元)
+              <input type="number" min={0} value={amount} onChange={(e) => setAmount(e.target.value)} required />
+            </label>
+            <label className="block-label">
+              日期
+              <div className="date-time-wrap">
+                <input type="date" value={chargeDate} onChange={(e) => setChargeDate(e.target.value)} required />
+              </div>
+            </label>
+          </div>
+          <label className="block-label">
+            備註(選填)
+            <input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder="例如:6/15 臨時取消課程" />
+          </label>
+          <button type="submit" className="btn-primary full">新增</button>
+        </form>
+      )}
+
+      {sorted.length === 0 ? (
+        <div className="empty-block">尚無手動扣費紀錄。</div>
+      ) : (
+        <div className="list">
+          {sorted.map((c) => (
+            <div className="payment-row" key={c.id}>
+              <div className="list-row-main">
+                <span className="list-row-title">{c.label || "手動扣費"}</span>
+                <span className="list-row-sub">
+                  {fmtDate(c.charge_date)} · {fmtMoney(c.amount)}
+                  {c.note ? ` · ${c.note}` : ""}
+                </span>
+              </div>
+              <button className="icon-btn" onClick={() => onDeleteManualCharge(c.id)} title="刪除">
+                <Trash2 size={14} />
+              </button>
             </div>
           ))}
         </div>
@@ -2321,7 +2505,7 @@ function BlockedTimeForm({ coaches, isStaff, currentCoachId, onAdd }) {
 /* ============================================================
    金流紀錄
    ============================================================ */
-function CashflowManager({ members, payments, venues, coaches, isStaff, currentCoachId, onAddVenue, onUpdateVenue, onDeleteVenue, onPurchaseVenue }) {
+function CashflowManager({ members, payments, manualCharges, venues, coaches, isStaff, currentCoachId, onAddVenue, onUpdateVenue, onDeleteVenue, onPurchaseVenue }) {
   const [expandedMemberId, setExpandedMemberId] = useState(null);
   const [showVenueForm, setShowVenueForm] = useState(false);
   const [venuePurchaseFor, setVenuePurchaseFor] = useState(null);
@@ -2367,6 +2551,7 @@ function CashflowManager({ members, payments, venues, coaches, isStaff, currentC
     });
 
     const trialFeeTotal = trialMembers.reduce((sum, m) => sum + Number(m.trial_fee || 0), 0);
+    const manualChargeTotal = (manualCharges || []).reduce((sum, c) => sum + Number(c.amount || 0), 0);
 
     return {
       totalUnfinishedSessions,
@@ -2376,8 +2561,9 @@ function CashflowManager({ members, payments, venues, coaches, isStaff, currentC
       totalUnpaidFromInstallments,
       perMember,
       trialFeeTotal,
+      manualChargeTotal,
     };
-  }, [regularMembers, trialMembers, payments]);
+  }, [regularMembers, trialMembers, payments, manualCharges]);
 
   return (
     <div className="page">
@@ -2413,6 +2599,12 @@ function CashflowManager({ members, payments, venues, coaches, isStaff, currentC
           <div className="stat-card">
             <span className="stat-label">體驗課課費總額</span>
             <span className="stat-value">{fmtMoney(summary.trialFeeTotal)}</span>
+          </div>
+        )}
+        {summary.manualChargeTotal > 0 && (
+          <div className="stat-card">
+            <span className="stat-label">手動扣費合計</span>
+            <span className="stat-value warn">{fmtMoney(summary.manualChargeTotal)}</span>
           </div>
         )}
         {venueSummary.list.length > 0 && (
@@ -2694,10 +2886,22 @@ function VenueEditForm({ venue, onSave, onCancel }) {
 /* ---------- 場地新購 Modal ---------- */
 function VenuePurchaseModal({ venue, onClose, onPurchase }) {
   const [sessionsAdded, setSessionsAdded] = useState(10);
+  const [pricePerSession, setPricePerSession] = useState(venue.price_per_session || "");
+  const [amount, setAmount] = useState("");
+
+  const calcAmount = sessionsAdded && pricePerSession
+    ? Number(sessionsAdded) * Number(pricePerSession)
+    : "";
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    await onPurchase(venue.id, Number(sessionsAdded));
+    const finalAmount = amount !== "" ? Number(amount) : calcAmount !== "" ? calcAmount : 0;
+    await onPurchase(
+      venue.id,
+      Number(sessionsAdded),
+      pricePerSession !== "" ? Number(pricePerSession) : null,
+      finalAmount,
+    );
     onClose();
   };
 
@@ -2715,8 +2919,29 @@ function VenuePurchaseModal({ venue, onClose, onPurchase }) {
             新購次數
             <input type="number" min={1} value={sessionsAdded} onChange={(e) => setSessionsAdded(e.target.value)} required />
           </label>
+          <label>
+            本次單堂場地費(元)
+            <input
+              type="number"
+              min={0}
+              value={pricePerSession}
+              onChange={(e) => setPricePerSession(e.target.value)}
+              placeholder={`上次 $${venue.price_per_session || 0}`}
+            />
+          </label>
+          <label>
+            實付金額(元)
+            <input
+              type="number"
+              min={0}
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder={calcAmount !== "" ? `自動計算:$${calcAmount.toLocaleString()}` : "選填"}
+            />
+          </label>
           <p className="modal-hint">
-            目前總次數 {venue.total_sessions} → 新購後 {venue.total_sessions + Number(sessionsAdded || 0)}
+            總次數 {venue.total_sessions} → 新購後 {venue.total_sessions + Number(sessionsAdded || 0)}
+            {pricePerSession !== "" && ` · 本次單堂場地費將更新為 $${Number(pricePerSession).toLocaleString()}`}
           </p>
           <button type="submit" className="btn-primary full">
             確認新購
@@ -2741,6 +2966,7 @@ export default function App() {
   const [bodyRecords, setBodyRecords] = useState([]);
   const [venues, setVenues] = useState([]);
   const [blockedTimes, setBlockedTimes] = useState([]);
+  const [manualCharges, setManualCharges] = useState([]);
   const [activeSession, setActiveSession] = useState(null);
   const [presetMemberId, setPresetMemberId] = useState(null);
   const [openMemberId, setOpenMemberId] = useState(null);
@@ -2792,6 +3018,7 @@ export default function App() {
         { data: b, error: bErr },
         { data: v, error: vErr },
         { data: bt, error: btErr },
+        { data: mc, error: mcErr },
       ] = await Promise.all([
         supabase.from("members").select("*").order("name"),
         supabase.from("sessions").select("*"),
@@ -2799,10 +3026,11 @@ export default function App() {
         supabase.from("body_records").select("*"),
         supabase.from("venues").select("*").order("name"),
         supabase.from("blocked_times").select("*"),
+        supabase.from("manual_charges").select("*"),
       ]);
       if (cancelled) return;
-      if (mErr || sErr || pErr || bErr || vErr || btErr) {
-        setLoadError((mErr || sErr || pErr || bErr || vErr || btErr).message);
+      if (mErr || sErr || pErr || bErr || vErr || btErr || mcErr) {
+        setLoadError((mErr || sErr || pErr || bErr || vErr || btErr || mcErr).message);
         return;
       }
       setMembers(m || []);
@@ -2811,6 +3039,7 @@ export default function App() {
       setBodyRecords(b || []);
       setVenues(v || []);
       setBlockedTimes(bt || []);
+      setManualCharges(mc || []);
     };
     loadAll();
 
@@ -2822,6 +3051,7 @@ export default function App() {
       .on("postgres_changes", { event: "*", schema: "public", table: "body_records" }, loadAll)
       .on("postgres_changes", { event: "*", schema: "public", table: "venues" }, loadAll)
       .on("postgres_changes", { event: "*", schema: "public", table: "blocked_times" }, loadAll)
+      .on("postgres_changes", { event: "*", schema: "public", table: "manual_charges" }, loadAll)
       .subscribe();
 
     return () => {
@@ -2854,15 +3084,14 @@ export default function App() {
     await supabase.from("members").delete().eq("id", memberId);
   };
 
-  const purchaseMore = async (memberId, sessionsAdded, amount = 0) => {
+  const purchaseMore = async (memberId, sessionsAdded, amount = 0, newPricePerSession = null) => {
     const member = members.find((m) => m.id === memberId);
     if (!member) return;
-    if (sessionsAdded) {
-      await supabase
-        .from("members")
-        .update({ total_sessions: member.total_sessions + sessionsAdded })
-        .eq("id", memberId);
-    }
+    // 只增加總堂數,不更動學員原本的 price_per_session
+    await supabase
+      .from("members")
+      .update({ total_sessions: member.total_sessions + sessionsAdded })
+      .eq("id", memberId);
     if (amount && amount > 0) {
       await supabase.from("payments").insert({
         member_id: memberId,
@@ -2873,7 +3102,7 @@ export default function App() {
         is_paid: true,
         installment_no: 1,
         installment_total: 1,
-        note: "購課收款",
+        note: `購課收款 ${sessionsAdded} 堂${newPricePerSession !== null ? `(本次單堂 $${newPricePerSession})` : ""}`,
       });
     }
   };
@@ -2905,7 +3134,14 @@ export default function App() {
       soreness_rating: payload.soreness_rating || null,
       mood_rating: payload.mood_rating || null,
       member_feedback: payload.member_feedback,
+      // 排課資訊:已完成的課堂地點可改,未完成的可改日期/時間/時長/地點
+      location: payload.location ?? target?.location ?? "",
     };
+    if (!wasCompleted) {
+      if (payload.session_date) update.session_date = payload.session_date;
+      if (payload.start_time) update.start_time = payload.start_time;
+      if (payload.duration_min) update.duration_min = Number(payload.duration_min);
+    }
     if (payload.markCompleted) update.status = "completed";
 
     await supabase.from("sessions").update(update).eq("id", sessionId);
@@ -3019,9 +3255,10 @@ export default function App() {
     await supabase.from("venues").delete().eq("id", venueId);
   };
 
-  const purchaseVenueSessions = async (venueId, sessionsAdded) => {
+  const purchaseVenueSessions = async (venueId, sessionsAdded, newPricePerSession = null, amount = 0) => {
     const venue = venues.find((v) => v.id === venueId);
     if (!venue) return;
+    // 只增加總次數,不更動場地原本的 price_per_session
     await supabase
       .from("venues")
       .update({ total_sessions: venue.total_sessions + Number(sessionsAdded || 0) })
@@ -3042,6 +3279,23 @@ export default function App() {
 
   const deleteBlockedTime = async (id) => {
     await supabase.from("blocked_times").delete().eq("id", id);
+  };
+
+  /* ---- Mutations: Manual charges(手動扣費) ---- */
+  const addManualCharge = async (memberId, payload) => {
+    const member = members.find((m) => m.id === memberId);
+    await supabase.from("manual_charges").insert({
+      member_id: memberId,
+      coach_id: member?.coach_id || session.user.id,
+      amount: payload.amount,
+      charge_date: payload.charge_date || todayStr(),
+      label: payload.label || "",
+      note: payload.note || "",
+    });
+  };
+
+  const deleteManualCharge = async (id) => {
+    await supabase.from("manual_charges").delete().eq("id", id);
   };
 
   // Storage upload helper (used directly by FileUploadSlot via supabase client)
@@ -3125,6 +3379,7 @@ export default function App() {
             sessions={sessions}
             payments={payments}
             bodyRecords={bodyRecords}
+            manualCharges={manualCharges}
             coaches={coaches}
             isStaff={isStaff}
             currentCoachId={session.user.id}
@@ -3142,6 +3397,8 @@ export default function App() {
             onAddBodyRecord={addBodyRecord}
             onUpdateBodyRecord={updateBodyRecord}
             onUploadFile={uploadFile}
+            onAddManualCharge={addManualCharge}
+            onDeleteManualCharge={deleteManualCharge}
             openMemberId={openMemberId}
             onMemberDetailHandled={() => setOpenMemberId(null)}
           />
@@ -3163,6 +3420,7 @@ export default function App() {
           <CashflowManager
             members={members}
             payments={payments}
+            manualCharges={manualCharges}
             venues={venues}
             coaches={coaches}
             isStaff={isStaff}
@@ -3191,6 +3449,7 @@ export default function App() {
         <SessionModal
           session={activeSession}
           member={activeMember}
+          venues={venues}
           onClose={() => setActiveSession(null)}
           onSave={saveSession}
           onDelete={deleteSession}
