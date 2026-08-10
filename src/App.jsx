@@ -4526,16 +4526,6 @@ export default function App() {
   const [profile, setProfile] = useState(null);
   const [coaches, setCoaches] = useState([]);
   const [activeTab, setActiveTab] = useState("overview");
-
-  // 小編被禁止查看金流時,若目前在金流頁則自動跳回總覽
-  useEffect(() => {
-    if (activeTab === "cashflow" && isStaff && profile) {
-      const coachProfile = coaches.find((c) => c.id === selectedCoachId);
-      if (coachProfile?.staff_can_view_cashflow === false) {
-        setActiveTab("overview");
-      }
-    }
-  }, [activeTab, isStaff, coaches, selectedCoachId, profile]);
   const [searchQuery, setSearchQuery] = useState("");
   const [members, setMembers] = useState([]);
   const [sessions, setSessions] = useState([]);
@@ -4559,6 +4549,17 @@ export default function App() {
   const [showCoachSwitcher, setShowCoachSwitcher] = useState(false);
 
   const isStaff = profile?.role === "staff";
+  // 小編被禁止查看金流時,若目前在金流頁則自動跳回總覽
+  useEffect(() => {
+    if (activeTab === "cashflow" && isStaff && profile) {
+      const coachProfile = coaches.find((c) => c.id === selectedCoachId);
+      if (coachProfile?.staff_can_view_cashflow === false) {
+        setActiveTab("overview");
+      }
+    }
+  }, [activeTab, isStaff, coaches, selectedCoachId, profile]);
+  // 實際用來篩選資料範圍的教練 id...
+  const scopeCoachId = isStaff ? selectedCoachId : session?.user?.id || null;
   // 實際用來篩選資料範圍的教練 id:教練固定為自己,小編則為目前選定的教練(尚未選擇時為 null)
   const scopeCoachId = isStaff ? selectedCoachId : session?.user?.id || null;
 
